@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  GOVERNMENT_ADMIN
+  VILLAGE_ADMIN
+  SOCIAL_WORKER
+  RESEARCHER
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  INACTIVE
+  LOCKED
+}
+
+enum AuditAction {
+  LOGIN
+  LOGOUT
+  REGISTER
+  PASSWORD_RESET_REQUEST
+  PASSWORD_RESET_COMPLETE
+  PASSWORD_CHANGE
+  PROFILE_UPDATE
+  USER_APPROVE
+  USER_DEACTIVATE
+  USER_DELETE
+  ROLE_CHANGE
+  SESSION_REVOKE
+  UNAUTHORIZED_ACCESS
+  FAMILY_CREATE
+  FAMILY_UPDATE
+  FAMILY_DELETE
+  MEMBER_ADD
+  MEMBER_UPDATE
+  MEMBER_DELETE
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+}
+
+enum RiskLevel {
+  SAFE
+  VULNERABLE
+  WARNING
+  HIGH_RISK
+  CRITICAL
+}
+
+model User {
+  id                  String               @id @default(uuid())
+  email               String               @unique
+  passwordHash        String               @map("password_hash")
+  name                String
+  role                UserRole
+  status              UserStatus           @default(PENDING)
+  failedLoginAttempts Int                  @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?            @map("locked_until")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  deletedAt           DateTime?            @map("deleted_at")
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
+  auditLogs           AuditLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Session {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  accessTokenHash  String   @map("access_token_hash")
+  refreshTokenHash String   @map("refresh_token_hash")
+  deviceType       String   @map("device_type")
+  deviceName       String   @map("device_name")
+  os               String
+  browser          String?
+  ipAddress        String   @map("ip_address")
+  lastActivity     DateTime @default(now()) @map("last_activity")
+  expiresAt        DateTime @map("expires_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tokenHash String   @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model AuditLog {
+  id         String       @id @default(uuid())
+  userId     String?      @map("user_id")
+  action     AuditAction
+  resource   String?
+  outcome    AuditOutcome
+  ipAddress  String       @map("ip_address")
+  deviceInfo String?      @map("device_info")
+  metadata   Json?
+  createdAt  DateTime     @default(now()) @map("created_at")
+  user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model Family {
+  id               String         @id @default(uuid())
+  kkNumber         String         @unique @map("kk_number")
+  headName         String         @map("head_name")
+  address          String
+  village          String
+  subDistrict      String         @map("sub_district")
+  monthlyIncome    Float          @map("monthly_income")
+  monthlyExpenses  Float          @map("monthly_expenses")
+  ownsHouse        Boolean        @map("owns_house")
+  houseCondition   String         @map("house_condition")
+  debtAmount       Float          @map("debt_amount")
+  assetValue       Float          @map("asset_value")
+  povertyRiskScore Float          @default(0.0) @map("poverty_risk_score")
+  riskLevel        RiskLevel      @default(SAFE) @map("risk_level")
+  scoreHistory     Float[]        @map("score_history")
+  lastAssessment   DateTime       @default(now()) @map("last_assessment")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  deletedAt        DateTime?      @map("deleted_at")
+  members          FamilyMember[]
+  incomes          Income[]
+  assets           Asset[]
+  debts            Debt[]
+
+  @@index([kkNumber])
+  @@index([village])
+  @@index([riskLevel])
+  @@map("families")
+}
+
+model FamilyMember {
+  id           String      @id @default(uuid())
+  familyId     String      @map("family_id")
+  name         String
+  relationship String
+  age          Int
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+  family       Family      @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  education    Education?
+  employment   Employment?
+
+  @@index([familyId])
+  @@map("family_members")
+}
+
+model Income {
+  id            String   @id @default(uuid())
+  familyId      String   @map("family_id")
+  source        String
+  amount        Float
+  recipientName String?  @map("recipient_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  family        Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@map("incomes")
+}
+
+model Asset {
+  id          String   @id @default(uuid())
+  familyId    String   @map("family_id")
+  name        String
+  value       Float
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  family      Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@map("assets")
+}
+
+model Debt {
+  id             String   @id @default(uuid())
+  familyId       String   @map("family_id")
+  source         String
+  amount         Float
+  monthlyPayment Float    @map("monthly_payment")
+  interestRate   Float?   @map("interest_rate")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  family         Family   @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@index([familyId])
+  @@map("debts")
+}
+
+model Education {
+  id         String       @id @default(uuid())
+  memberId   String       @unique @map("member_id")
+  level      String
+  status     String
+  schoolName String?      @map("school_name")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+  member     FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("educations")
+}
+
+model Employment {
+  id            String       @id @default(uuid())
+  memberId      String       @unique @map("member_id")
+  occupation    String
+  status        String
+  monthlyIncome Float        @map("monthly_income")
+  employerName  String?      @map("employer_name")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  member        FamilyMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("employments")
+}
